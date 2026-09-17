@@ -184,6 +184,23 @@ export class SessionEngineEventWiring {
 
         host.messages.applyMessageEditQueued(id, message);
       },
+      onPollVote: (event): void => {
+        if (!host.isLiveEngine(id, engine)) return;
+        if (!event.messageId) {
+          this.logger.warn('Ignoring a poll vote without a target poll message id', {
+            sessionId: id,
+            action: 'poll_vote_ignored',
+          });
+          return;
+        }
+        this.logger.debug(`Poll vote received: ${event.messageId} <- ${event.voterId}`, {
+          sessionId: id,
+          messageId: event.messageId,
+          action: 'poll_vote_received',
+        });
+
+        host.messages.applyPollVoteQueued(id, event);
+      },
       onGroupEvent: (event): void => {
         if (!host.isLiveEngine(id, engine)) return;
         this.logger.debug(`Group event: ${event.kind} in ${event.groupId}`, {

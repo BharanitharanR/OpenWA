@@ -4,6 +4,7 @@ import {
   type RevokedMessage,
   type ReactionEvent,
   type EditedMessage,
+  type PollVoteEvent,
 } from '../interfaces/whatsapp-engine.interface';
 import { type SerializedWid } from '../types/whatsapp-web-js.types';
 import { buildEditedMessage, buildIncomingMessageBase, mapContactFields } from './message-mapper';
@@ -194,6 +195,38 @@ export function registerWwebjsMessageEvents(client: Client, host: WwebjsEngineHo
       host.getCallbacks().onMessageReaction?.(event);
     } catch (error) {
       host.logger.error('Error processing message_reaction', String(error));
+    }
+  });
+
+  client.on('vote_update', vote => {
+    try {
+      // `parentMessage` is a full Message structure, which upstream's id normalization DOES
+      // cover (msg.id is normalized at the structure constructor) - same reasoning as trusting
+      // `quoted.id._serialized` above for a quoted message, and the same $1 fallback the
+      // message_reaction/message_revoke_everyone handlers use for a WA Web build that renamed
+      // the field (#747). whatsapp-web.js's own installed type declarations don't expose
+      // PollVote.parentMsgKey (only its JS source does) or SelectedPollOption.localId (typed as
+      // `id` instead) - parentMessage.id is the one id form both the types and this codebase's
+      // own normalization actually cover, so it's the only one read here.
+      const parentId = vote.parentMessage?.id as unknown as SerializedWid | undefined;
+      const messageId = parentId?._serialized ?? parentId?.$1 ?? '';
+      if (!messageId) {
+        host.logger.warn('Ignoring a poll vote whose parent poll message id could not be read');
+        return;
+      }
+      const event: PollVoteEvent = {
+        messageId,
+        chatId: vote.parentMessage?.from ?? '',
+        voterId: vote.voter,
+        selectedOptions: (vote.selectedOptions || []).map(option => ({
+          localId: option.id,
+          name: option.name,
+        })),
+        timestamp: Math.floor((vote.interractedAtTs ?? Date.now()) / 1000),
+      };
+      host.getCallbacks().onPollVote?.(event);
+    } catch (error) {
+      host.logger.error('Error processing vote_update', String(error));
     }
   });
 

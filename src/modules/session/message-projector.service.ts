@@ -25,6 +25,7 @@ import {
   ReactionEvent,
   EditedMessage,
   RevokedMessage,
+  PollVoteEvent,
 } from '../../engine/interfaces/whatsapp-engine.interface';
 import { createLogger } from '../../common/services/logger.service';
 import { EventsGateway } from '../events/events.gateway';
@@ -577,6 +578,11 @@ export class MessageProjector {
   /** Edit apply, queued on the per-message mutation chain — see MessageMutationProjector. */
   applyMessageEditQueued(id: string, message: EditedMessage): void {
     this.mutationProjector.applyMessageEditQueued(id, message);
+  }
+
+  /** Poll vote apply, queued on the per-message mutation chain — see MessageMutationProjector. */
+  applyPollVoteQueued(id: string, event: PollVoteEvent): void {
+    this.mutationProjector.applyPollVoteQueued(id, event);
   }
 
   /** Queue a message-scoped mutation. A failed operation is isolated so later events still run. */

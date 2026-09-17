@@ -5,7 +5,7 @@ import { KeyedMutationQueue } from '../../common/utils/keyed-mutation-queue';
 import { LoggerService } from '../../common/services/logger.service';
 import { EventsGateway } from '../events/events.gateway';
 import { WebhookService } from '../webhook/webhook.service';
-import { ReactionEvent, EditedMessage } from '../../engine/interfaces/whatsapp-engine.interface';
+import { ReactionEvent, EditedMessage, PollVoteEvent } from '../../engine/interfaces/whatsapp-engine.interface';
 
 /**
  * Applies stored-message mutations — reactions, inbound edits, REST outbound-edit echoes — behind
@@ -38,6 +38,16 @@ export class MessageMutationProjector {
    */
   applyMessageEditQueued(id: string, message: EditedMessage): void {
     this.enqueueMessageMutation(id, message.messageId, () => this.applyMessageEdit(id, message));
+  }
+
+  /**
+   * Queue a poll vote apply. Same reasoning as applyReactionQueued: the per-voter selection read-
+   * modify-writes the poll message's metadata column, so concurrent votes on the same poll must be
+   * serialized, and sharing the message-scoped chain keeps a vote from racing a reaction/edit on
+   * the same row too.
+   */
+  applyPollVoteQueued(id: string, event: PollVoteEvent): void {
+    this.enqueueMessageMutation(id, event.messageId, () => this.applyPollVote(id, event));
   }
 
   /** Queue a message-scoped mutation. A failed operation is isolated so later events still run. */
@@ -90,6 +100,50 @@ export class MessageMutationProjector {
       void this.webhookService.dispatch(id, 'message.reaction', payload);
     } catch (err) {
       this.logger.error(`Failed to update message reaction: ${event.messageId}`, String(err));
+    }
+  }
+
+  private async applyPollVote(id: string, event: PollVoteEvent): Promise<void> {
+    try {
+      if (!event.messageId) return;
+
+      const msg = await this.messageRepository.findOne({ where: { sessionId: id, waMessageId: event.messageId } });
+
+      // Same best-effort contract as applyReaction: the stored poll message is absent whenever it
+      // was never persisted (ephemeral messages off, or the poll predates this session going
+      // live), but the notification still fires - message.vote is a declared webhook event and the
+      // dashboard stream is the point of it regardless of whether a local copy exists to snapshot.
+      let votes: Record<string, Array<{ localId: number; name?: string }>> | undefined;
+      if (msg) {
+        const metadata = msg.metadata || {};
+        votes = (metadata.pollVotes as typeof votes) || {};
+        // Empty selectedOptions means this voter deselected every option - same "absence is
+        // meaningful" as reactions deleting a sender's entry on an empty reaction string, not a
+        // no-op to skip.
+        if (event.selectedOptions.length === 0) {
+          delete votes[event.voterId];
+        } else {
+          votes[event.voterId] = event.selectedOptions;
+        }
+        metadata.pollVotes = votes;
+        // Scoped update of ONLY the metadata column - same reasoning as applyReaction: a full-row
+        // save would clobber a concurrent ack UPDATE that committed between this findOne and the
+        // write.
+        await this.messageRepository.update({ sessionId: id, waMessageId: event.messageId }, {
+          metadata,
+        } as QueryDeepPartialEntity<Message>);
+      }
+
+      // `votes` is the post-apply snapshot of EVERY voter's current selection on this poll, not
+      // just what changed - same replace-not-merge contract applyReaction's own `reactions`
+      // snapshot documents, for the same reason (a consumer replaces its copy with this one).
+      const payload = votes ? { ...event, votes } : { ...event };
+      this.eventsGateway.emitPollVote(id, payload);
+      // Webhook parity with the WebSocket broadcast - same payload, so a webhook-only consumer
+      // observes votes too.
+      void this.webhookService.dispatch(id, 'message.vote', payload);
+    } catch (err) {
+      this.logger.error(`Failed to update poll vote: ${event.messageId}`, String(err));
     }
   }
 

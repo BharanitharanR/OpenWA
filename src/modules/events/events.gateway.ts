@@ -629,6 +629,14 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
   }
 
   /**
+   * Emit a poll vote notification - someone voted (or withdrew a vote) on a poll this session
+   * sent.
+   */
+  emitPollVote(sessionId: string, data: Record<string, unknown>) {
+    this.emitToRooms(sessionId, 'message.vote', data);
+  }
+
+  /**
    * Emit a group membership join (a user was added or joined via invite). Payload mirrors the
    * `group.join` webhook: `{ groupId, participantIds, timestamp, actorId? }`.
    */

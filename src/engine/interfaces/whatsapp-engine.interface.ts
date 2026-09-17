@@ -518,6 +518,24 @@ export interface ReactionEvent {
 }
 
 /**
+ * A vote cast (or withdrawn) on a poll THIS session sent. `selectedOptions` empty means the
+ * voter deselected every option they'd previously picked, not that nothing happened - same
+ * "absence is meaningful" shape as ReactionEvent's own `reaction: ''` for an un-reaction, and
+ * consumers should treat it the same way (replace, not merge, this voter's prior selection).
+ */
+export interface PollVoteEvent {
+  /** The poll (creation) message's own id - which poll this vote belongs to. */
+  messageId: string;
+  chatId: string;
+  /** Who voted. */
+  voterId: string;
+  /** Every option currently selected by this voter, after this vote - not just what changed. */
+  selectedOptions: Array<{ localId: number; name?: string }>;
+  /** Unix seconds this vote/deselection occurred. */
+  timestamp: number;
+}
+
+/**
  * A group membership or metadata change, mapped at the adapter boundary to this neutral
  * shape so consumers never see engine-specific payloads:
  *  - whatsapp-web.js: `group_join` / `group_leave` / `group_update` (GroupNotification).
@@ -666,6 +684,8 @@ export interface EngineEventCallbacks {
   onMessageRevoked?: (message: RevokedMessage) => void;
   onMessageReaction?: (event: ReactionEvent) => void;
   onMessageEdited?: (message: EditedMessage) => void;
+  /** Fired when someone votes (or withdraws a vote) on a poll this session sent. */
+  onPollVote?: (event: PollVoteEvent) => void;
   /**
    * Fired on group membership changes (join/leave) and group metadata updates
    * (subject/description/announce/locked). The `kind` selects the consumer event name

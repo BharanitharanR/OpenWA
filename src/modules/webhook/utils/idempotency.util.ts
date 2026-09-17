@@ -70,6 +70,15 @@ export function generateIdempotencyKey(event: string, data: Record<string, unkno
       // distinct keys while retries of the same delivery stay stable.
       return `react_${toStr(data.sessionId)}_${toStr(data.messageId)}_${toStr(data.senderId)}${occurrence}`;
 
+    case 'message.vote':
+      // Same reasoning as message.reaction: a vote carries no unique id and is a read-modify-write
+      // of the poll's per-voter selection map, and the same voter can legitimately repeat the same
+      // content over time (select an option, deselect it, select it again). Keying on (voter,
+      // target poll) alone would collapse a genuine re-vote onto the earlier one, so salt with
+      // occurredAt (captured once per dispatch, reused across retries): distinct occurrences get
+      // distinct keys while retries of the same delivery stay stable.
+      return `vote_${toStr(data.sessionId)}_${toStr(data.messageId)}_${toStr(data.voterId)}${occurrence}`;
+
     case 'session.status':
       // Salted so repeated transitions to the same status (e.g. across disconnect/reconnect cycles)
       // stay distinct instead of collapsing onto one key.

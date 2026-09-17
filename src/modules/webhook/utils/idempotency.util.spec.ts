@@ -177,6 +177,36 @@ describe('Idempotency Utils', () => {
       expect(a).not.toBe(b);
     });
 
+    it('salts message.vote keys so a re-vote (same voter/poll, later time) is a distinct event', () => {
+      // A vote has no unique id and is a read-modify-write: the same voter can go select ->
+      // deselect -> select again. Keying on (voter, poll) alone would collapse the re-vote onto
+      // the earlier one.
+      const a = generateIdempotencyKey(
+        'message.vote',
+        { sessionId: 'A', messageId: 'POLL1', voterId: '628111@c.us' },
+        '2026-06-20T00:00:00.000Z',
+      );
+      const b = generateIdempotencyKey(
+        'message.vote',
+        { sessionId: 'A', messageId: 'POLL1', voterId: '628111@c.us' },
+        '2026-06-20T00:05:00.000Z',
+      );
+      expect(a).not.toBe(b);
+    });
+
+    it('is retry-stable for message.vote: the same occurrence regenerates the same key', () => {
+      const at = '2026-06-20T00:00:00.000Z';
+      const data = { sessionId: 'A', messageId: 'POLL1', voterId: '628111@c.us' };
+      expect(generateIdempotencyKey('message.vote', data, at)).toBe(generateIdempotencyKey('message.vote', data, at));
+    });
+
+    it('gives two voters on the same poll DISTINCT message.vote keys', () => {
+      const at = '2026-06-20T00:00:00.000Z';
+      const a = generateIdempotencyKey('message.vote', { sessionId: 'A', messageId: 'POLL', voterId: 'V1' }, at);
+      const b = generateIdempotencyKey('message.vote', { sessionId: 'A', messageId: 'POLL', voterId: 'V2' }, at);
+      expect(a).not.toBe(b);
+    });
+
     it('salts message.edited keys so an edit (same message, later time) is a distinct event', () => {
       const a = generateIdempotencyKey(
         'message.edited',
