@@ -21,6 +21,10 @@
  *      repairs, gated the same way as step 3.
  *   5. `node scripts/patch-wwebjs-ready-sync.js --best-effort` when present — the readiness
  *      marker + hasSynced level-check, gated the same way.
+ *   6. `node scripts/patch-wwebjs-media-id.js --best-effort` when present — deletes the internal
+ *      __x_id field whatsapp-web.js's own mediaOptions spread was clobbering message.id with,
+ *      which broke every media send (image/video/audio/voice) on current WhatsApp Web builds,
+ *      gated the same way.
  *
  * Structured like scripts/patch-wwebjs-201832.js: pure planning + injectable spawn, so the spec
  * (scripts/postinstall.spec.js, node:test) exercises every branch without a real npm run.
@@ -97,6 +101,15 @@ function planSteps(root, env = process.env) {
       name: 'whatsapp-web.js ready-sync repair (scripts/patch-wwebjs-ready-sync.js --best-effort)',
       command: process.execPath,
       args: [readySyncPatcher, '--best-effort'],
+      options: { stdio: 'inherit', cwd: root, env: cleanEnv },
+    });
+  }
+  const mediaIdPatcher = path.join(root, 'scripts', 'patch-wwebjs-media-id.js');
+  if (fs.existsSync(mediaIdPatcher)) {
+    steps.push({
+      name: 'whatsapp-web.js media __x_id repair (scripts/patch-wwebjs-media-id.js --best-effort)',
+      command: process.execPath,
+      args: [mediaIdPatcher, '--best-effort'],
       options: { stdio: 'inherit', cwd: root, env: cleanEnv },
     });
   }
